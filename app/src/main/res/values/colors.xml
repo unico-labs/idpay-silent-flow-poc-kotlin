@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- Paleta Unico -->
+    <color name="unico_dark_navy">#0B1B33</color>
+    <color name="unico_blue">#0057FF</color>
+    <color name="unico_blue_light">#4C8CFF</color>
+    <color name="unico_bg">#F3F5FA</color>
+    <color name="unico_card">#FFFFFF</color>
+    <color name="unico_text_primary">#1A1F36</color>
+    <color name="unico_text_secondary">#6B7280</color>
+    <color name="unico_log_text">#D7E3FF</color>
+    <color name="unico_stroke">#E1E5EE</color>
+    <color name="result_ok">#2E7D32</color>
+</resources>
