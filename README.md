@@ -55,7 +55,7 @@ Este repositório **não contém nenhuma credencial real**. Antes de compilar, s
 
 | Onde | O que trocar | Valor |
 | --- | --- | --- |
-| `app/build.gradle` | `applicationId` e `namespace` | Seu bundle identifier registrado na Unico |
+| `app/build.gradle` | `applicationId` (não altere o `namespace`) | Seu bundle identifier registrado na Unico |
 | `UnicoConfig.kt` | `getBundleIdentifier()` | O mesmo bundle identifier acima |
 | `UnicoConfig.kt` | `getHostKey()` | Sua **SDK Key** (Client API Key), com o envio de `PrepareInfo` habilitado |
 | `PocConfig.kt` | `COMPANY_ID` | O UUID da sua company no IDPay |
