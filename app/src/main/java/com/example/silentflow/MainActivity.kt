@@ -123,6 +123,7 @@ class MainActivity : AppCompatActivity() {
         val sdk = UnicoSDK.getInstance()
         if (sdk == null) {
             onCollectFailed(IllegalStateException("UnicoSDK.initializeSDK was not called"))
+            SilentFlowApplication.initializeUnicoSdk(this)
             return
         }
 
@@ -132,6 +133,10 @@ class MainActivity : AppCompatActivity() {
             sdk.startSilentValidation(PrepareInfo(externalUserId, USE_CASE))
                 .onSuccess { onCollectSent(externalUserId) }
                 .onFailure { onCollectFailed(it) }
+
+            // One session serves one validation: open a fresh one, in
+            // background, for the next. Also recovers from a failed init.
+            SilentFlowApplication.initializeUnicoSdk(this@MainActivity)
         }
     }
 
@@ -148,8 +153,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Without a collection, the transaction simply follows the standard flow
-    // with the visual challenge. The SDK is initialized again so the next
-    // attempt can succeed if the launch-time initialization failed.
+    // with the visual challenge.
     private fun onCollectFailed(error: Throwable) {
         collectReadyAtMs = 0L
         runTransactionAfterCollect = false
@@ -158,9 +162,6 @@ class MainActivity : AppCompatActivity() {
             ?.let { "${it.code} ${it.message}" }
             ?: error.message
         addLog("collect FAILED: $detail")
-
-        SilentFlowApplication.initializeUnicoSdk(this)
-        addLog("SDK re-initialized — try the collection again")
     }
 
     // ----------------------------------------------------------- transaction
