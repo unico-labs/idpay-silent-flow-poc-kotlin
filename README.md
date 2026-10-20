@@ -35,6 +35,8 @@ O botão **Fluxo completo** roda os dois passos em sequência. A linha de status
 
 > ⚠️ Depois do envio confirmado, a transação respeita uma margem curta de processamento (`PocConfig.POST_SEND_WAIT_MS`, 1,5s), absorvida na tela de loading só se a transação for pedida logo em seguida. Se a coleta falhar, o fluxo degrada sem erro: a transação segue o fluxo padrão, com challenge.
 >
+> ⚠️ O `initializeSDK` não avisa o app quando falha (por exemplo, sem rede no launch), e o `startSilentValidation` não refaz a inicialização sozinho. Por isso a POC chama o `initializeSDK` de novo sempre que uma coleta falha — a próxima tentativa já encontra a SDK pronta, sem precisar reabrir o app.
+>
 > ⚠️ O `externalUserId` da coleta e o `additionalInfo.externalUserID` da transação precisam ser **idênticos, char a char**. Qualquer diferença faz a busca falhar silenciosamente (transação cai no fluxo com challenge, sem erro).
 >
 > ⚠️ A coleta tem **validade máxima de 5 minutos**: a transação precisa ser criada dentro dessa janela para a coleta ser aceita. Passado esse tempo, dispare uma nova coleta antes de transacionar.

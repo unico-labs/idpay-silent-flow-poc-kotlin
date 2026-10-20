@@ -148,7 +148,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Without a collection, the transaction simply follows the standard flow
-    // with the visual challenge.
+    // with the visual challenge. The SDK is initialized again so the next
+    // attempt can succeed if the launch-time initialization failed.
     private fun onCollectFailed(error: Throwable) {
         collectReadyAtMs = 0L
         runTransactionAfterCollect = false
@@ -157,6 +158,9 @@ class MainActivity : AppCompatActivity() {
             ?.let { "${it.code} ${it.message}" }
             ?: error.message
         addLog("collect FAILED: $detail")
+
+        SilentFlowApplication.initializeUnicoSdk(this)
+        addLog("SDK re-initialized — try the collection again")
     }
 
     // ----------------------------------------------------------- transaction
