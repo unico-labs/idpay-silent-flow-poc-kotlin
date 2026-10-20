@@ -1,8 +1,6 @@
 package com.example.silentflow
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -13,39 +11,31 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.browser.customtabs.CustomTabsIntent
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.acesso.acessobio_android.AcessoBioListener
-import com.acesso.acessobio_android.onboarding.AcessoBio
-import com.acesso.acessobio_android.onboarding.camera.CameraListener
-import com.acesso.acessobio_android.onboarding.camera.UnicoCheckCameraOpener
-import com.acesso.acessobio_android.onboarding.models.Environment
-import com.acesso.acessobio_android.services.dto.ErrorBio
-import com.acesso.acessobio_android.services.dto.PrepareInfo
+import androidx.lifecycle.lifecycleScope
+import com.acesso.acessobio_android.onboarding.UnicoSDK
+import com.acesso.acessobio_android.onboarding.models.PrepareInfo
 import com.google.android.material.textfield.TextInputEditText
+import io.unico.unicosdkbase.silentauth.domain.model.SilentValidationResult
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /**
  * IDPay Silent Flow POC: silent device data collection through the Unico SDK
- * (prepareCamera + PrepareInfo — the camera is never opened), followed by an
- * IDPay transaction that is approved silently when the collected device
- * matches the user history.
+ * (initializeSDK on app launch + startSilentValidation — no camera involved),
+ * followed by an IDPay transaction that is approved silently when the
+ * collected device matches the user history.
  */
 class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val USE_CASE = "idpay-silent-flow-poc"
-
-        // Window for the SDK fire-and-forget upload to leave the device. The
-        // countdown runs in background; the user only sees a loading screen if
-        // the transaction is requested while time is still remaining.
-        private const val COLLECT_GRACE_MS = 5_000L
     }
 
     private lateinit var mainText: TextView
@@ -63,19 +53,10 @@ class MainActivity : AppCompatActivity() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    // When the last collection becomes available to the transaction: send
+    // confirmation + processing margin.
     private var collectReadyAtMs = 0L
-    private var collectGraceDeadlineMs = 0L
-    private var collectGeneration = 0
     private var runTransactionAfterCollect = false
-
-    private val bioListener = object : AcessoBioListener {
-        override fun onErrorAcessoBio(error: ErrorBio?) =
-            runOnUiThread { addLog("SDK error: ${error?.description}") }
-
-        override fun onUserClosedCameraManually() = Unit
-        override fun onSystemClosedCameraTimeoutSession() = Unit
-        override fun onSystemChangedTypeCameraTimeoutFaceInference() = Unit
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,7 +79,6 @@ class MainActivity : AppCompatActivity() {
             logTextView.text = getString(R.string.logs_placeholder)
         }
 
-        ensureCameraPermission()
         handleDeepLink(intent)
     }
 
@@ -131,7 +111,7 @@ class MainActivity : AppCompatActivity() {
         externalUserIdInput.text.toString().trim()
             .ifEmpty { cpfInput.text.toString().trim() }
 
-    /** Starts the silent collection. Always runs in background: no camera UI. */
+    /** Runs the silent collection: no camera, no UI. */
     private fun startCollect() {
         val externalUserId = resolveExternalUserId()
         if (externalUserId.isEmpty()) {
@@ -140,42 +120,26 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        val sdk = UnicoSDK.getInstance()
+        if (sdk == null) {
+            onCollectFailed(IllegalStateException("UnicoSDK.initializeSDK was not called"))
+            return
+        }
+
         mainText.text = getString(R.string.status_collect_preparing)
-        addLog("collect: prepareCamera + PrepareInfo($externalUserId, $USE_CASE)")
-
-        AcessoBio(this, bioListener)
-            .setEnvironment(Environment.UAT)
-            .build()
-            .prepareCamera(
-                UnicoConfig(),
-                object : CameraListener {
-                    override fun onCameraReady(opener: UnicoCheckCameraOpener.Camera?) =
-                        runOnUiThread { onCollectReady() }
-
-                    override fun onCameraFailed(message: String?) =
-                        runOnUiThread { onCollectFailed(message) }
-                },
-                PrepareInfo(externalUserId, USE_CASE),
-            )
+        lifecycleScope.launch {
+            // Resolves once the collection has been sent.
+            sdk.startSilentValidation(PrepareInfo(externalUserId, USE_CASE))
+                .onSuccess { onCollectSent(externalUserId) }
+                .onFailure { onCollectFailed(it) }
+        }
     }
 
-    private fun onCollectReady() {
-        // The camera is intentionally NOT opened — the collection continues in
-        // background. Start counting the upload grace window from here.
-        collectReadyAtMs = System.currentTimeMillis()
-        collectGraceDeadlineMs = collectReadyAtMs + COLLECT_GRACE_MS
-        val generation = ++collectGeneration
-
-        mainText.text = getString(R.string.status_collect_uploading)
-        addLog("collect: started in background (grace window: ${COLLECT_GRACE_MS}ms)")
-
-        mainHandler.postDelayed({
-            if (generation == collectGeneration) {
-                val ts = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-                mainText.text = getString(R.string.status_collect_ready, ts)
-                addLog("collect: upload window closed — device data ready")
-            }
-        }, COLLECT_GRACE_MS)
+    private fun onCollectSent(externalUserId: String) {
+        collectReadyAtMs = System.currentTimeMillis() + PocConfig.POST_SEND_WAIT_MS
+        val ts = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+        mainText.text = getString(R.string.status_collect_ready, ts)
+        addLog("collect: sent for externalUserId=$externalUserId")
 
         if (runTransactionAfterCollect) {
             runTransactionAfterCollect = false
@@ -183,40 +147,44 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun onCollectFailed(message: String?) {
-        collectGeneration++
-        mainText.text = getString(R.string.status_collect_failed)
-        addLog("collect FAILED: $message")
+    // Without a collection, the transaction simply follows the standard flow
+    // with the visual challenge.
+    private fun onCollectFailed(error: Throwable) {
+        collectReadyAtMs = 0L
         runTransactionAfterCollect = false
-        hideOverlay()
+        mainText.text = getString(R.string.status_collect_failed)
+        val detail = (error as? SilentValidationResult.Error)
+            ?.let { "${it.code} ${it.message}" }
+            ?: error.message
+        addLog("collect FAILED: $detail")
     }
 
     // ----------------------------------------------------------- transaction
 
     /**
-     * Creates the transaction respecting the collection grace window: if the
-     * upload still needs time, that wait is absorbed into the loading screen;
-     * otherwise the request goes out immediately.
+     * Creates the transaction. Right after a collection, the remaining
+     * processing margin is absorbed into the loading screen.
      */
     private fun createTransactionWhenReady() {
-        showOverlayProcessing(getString(R.string.overlay_processing))
+        val missing = buildList {
+            if (cpfInput.text.isNullOrBlank()) add("CPF")
+            if (binInput.text.isNullOrBlank()) add("binDigits")
+            if (lastDigitsInput.text.isNullOrBlank()) add("lastDigits")
+            if (bearerTokenInput.text.isNullOrBlank()) add("Bearer token")
+            if (PocConfig.COMPANY_ID.startsWith("YOUR_")) add("COMPANY_ID (PocConfig.kt)")
+        }
+        if (missing.isNotEmpty()) {
+            addLog("ERROR: missing ${missing.joinToString(", ")}")
+            return
+        }
 
-        val now = System.currentTimeMillis()
-        val remainingMs = collectGraceDeadlineMs - now
-        val sinceCollectMs = now - collectReadyAtMs
-        when {
-            remainingMs > 0 -> {
-                addLog("transaction: requested ${sinceCollectMs}ms after collect → absorbing ${remainingMs}ms into loading")
-                mainHandler.postDelayed({ createTransaction() }, remainingMs)
-            }
-            collectReadyAtMs > 0 -> {
-                addLog("transaction: upload window already closed (collect ${sinceCollectMs}ms ago) → no extra wait")
-                createTransaction()
-            }
-            else -> {
-                addLog("transaction: no collection in this session → sending as-is")
-                createTransaction()
-            }
+        showOverlayProcessing(getString(R.string.overlay_processing))
+        val remainingMs = collectReadyAtMs - System.currentTimeMillis()
+        if (remainingMs > 0) {
+            addLog("transaction: waiting ${remainingMs}ms of processing margin")
+            mainHandler.postDelayed({ createTransaction() }, remainingMs)
+        } else {
+            createTransaction()
         }
     }
 
@@ -226,22 +194,6 @@ class MainActivity : AppCompatActivity() {
         val bin = binInput.text.toString().trim()
         val lastDigits = lastDigitsInput.text.toString().trim()
         val token = bearerTokenInput.text.toString().trim()
-
-        val missing = mutableListOf<String>()
-        if (cpf.isEmpty()) missing.add("CPF")
-        if (bin.isEmpty()) missing.add("binDigits")
-        if (lastDigits.isEmpty()) missing.add("lastDigits")
-        if (token.isEmpty()) missing.add("Bearer token")
-        if (missing.isNotEmpty()) {
-            addLog("ERROR: missing ${missing.joinToString(", ")}")
-            hideOverlay()
-            return
-        }
-        if (PocConfig.COMPANY_ID.startsWith("YOUR_")) {
-            addLog("ERROR: fill COMPANY_ID in PocConfig.kt")
-            hideOverlay()
-            return
-        }
 
         val body = JSONObject()
             .put("identity", JSONObject().put("key", "cpf").put("value", cpf))
@@ -353,14 +305,6 @@ class MainActivity : AppCompatActivity() {
         val data = intent?.data ?: return
         if (data.scheme != "silentflow") return
         addLog("deep link: status=${data.getQueryParameter("status")} (challenge return)")
-    }
-
-    private fun ensureCameraPermission() {
-        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
-            PackageManager.PERMISSION_GRANTED
-        if (!granted) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 1)
-        }
     }
 
     private fun openInCustomTab(url: Uri) {
