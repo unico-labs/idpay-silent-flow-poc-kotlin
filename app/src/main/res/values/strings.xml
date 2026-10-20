@@ -4,9 +4,8 @@
     <string name="app_title">IDPay Silent Flow · SDK Android POC</string>
     <string name="card_title">Teste de validação silenciosa</string>
     <string name="card_subtitle">Pronto para iniciar</string>
-    <string name="status_collect_preparing">⏳ Preparando coleta…</string>
-    <string name="status_collect_uploading">⏳ Enviando dados de device em background…</string>
-    <string name="status_collect_ready">✓ Dados de device prontos (%1$s)</string>
+    <string name="status_collect_preparing">⏳ Coletando dados de device…</string>
+    <string name="status_collect_ready">✓ Dados de device enviados (%1$s)</string>
     <string name="status_collect_failed">✖ Falha na coleta de device</string>
     <string name="hint_external_user_id">externalUserId (CPF/e-mail/ID do usuário)</string>
     <string name="hint_cpf">identity.value (CPF)</string>
