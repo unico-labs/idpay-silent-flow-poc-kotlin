@@ -20,7 +20,7 @@
 Este projeto testa o fluxo de **validação silenciosa de transações** em um app nativo:
 
 1. A SDK Android coleta os dados de device em silêncio — **sem câmera** e sem nenhuma captura do usuário:
-   - `UnicoSDK.initializeSDK` roda **no launch do app** (`SilentFlowApplication.onCreate`), fora do caminho crítico: a SDK se autentica e aquece a coleta antes de o usuário chegar ao fluxo;
+   - `UnicoSDK.initializeSDK` abre uma **sessão de coleta** fora do caminho crítico: a primeira no launch do app (`SilentFlowApplication.onCreate`), e uma nova depois de cada coleta, em background — **cada validação usa a própria sessão**;
    - `startSilentValidation(PrepareInfo(externalUserId))` roda na ação do usuário e **retorna quando a coleta foi enviada** — sem espera fixa.
 2. O app cria uma transação no IDPay (`POST /api/public/v1/credit/transaction`) enviando o **mesmo `externalUserId`** em `additionalInfo.externalUserID`. Em uma integração real essa chamada é feita pelo **backend do cliente** (server-to-server) — a POC encurta esse caminho chamando a API diretamente.
 3. O backend localiza a coleta do passo 1 pelo identificador e valida o device contra o histórico do usuário:
@@ -35,7 +35,7 @@ O botão **Fluxo completo** roda os dois passos em sequência. A linha de status
 
 > ⚠️ Depois do envio confirmado, a transação respeita uma margem curta de processamento (`PocConfig.POST_SEND_WAIT_MS`, 1,5s), absorvida na tela de loading só se a transação for pedida logo em seguida. Se a coleta falhar, o fluxo degrada sem erro: a transação segue o fluxo padrão, com challenge.
 >
-> ⚠️ O `initializeSDK` não avisa o app quando falha (por exemplo, sem rede no launch), e o `startSilentValidation` não refaz a inicialização sozinho. Por isso a POC chama o `initializeSDK` de novo sempre que uma coleta falha — a próxima tentativa já encontra a SDK pronta, sem precisar reabrir o app.
+> ⚠️ O `initializeSDK` não avisa o app quando falha (por exemplo, sem rede), e o `startSilentValidation` não refaz a inicialização sozinho. Como a POC abre uma sessão nova depois de toda coleta — inclusive das que falham —, a próxima tentativa já encontra a SDK pronta, sem precisar reabrir o app.
 >
 > ⚠️ O `externalUserId` da coleta e o `additionalInfo.externalUserID` da transação precisam ser **idênticos, char a char**. Qualquer diferença faz a busca falhar silenciosamente (transação cai no fluxo com challenge, sem erro).
 >

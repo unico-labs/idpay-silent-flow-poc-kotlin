@@ -10,14 +10,14 @@ class SilentFlowApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        // On app launch, so the collection is ready by the time the user
-        // reaches the flow.
+        // The first session opens on app launch, so it is ready by the time
+        // the user reaches the flow.
         initializeUnicoSdk(this)
     }
 
     companion object {
-        // Fire-and-forget: a failure (e.g. no network on launch) is not
-        // reported back, so callers re-run it when the collection fails.
+        // Fire-and-forget: opens a new collection session. A failure (e.g. no
+        // network) is not reported back; the next call opens a new session.
         fun initializeUnicoSdk(context: Context) {
             UnicoSDK.initializeSDK(
                 context.applicationContext,
